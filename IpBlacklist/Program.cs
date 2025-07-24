@@ -6,19 +6,16 @@ using IpBlacklist.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Serilog;
+using Serilog.Context;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, services, configuration) => {
-    configuration
-        .ReadFrom.Configuration(context.Configuration) // Reads from appsettings.json
-        .ReadFrom.Services(services) // Enables DI-injected enrichers
-        .Enrich.FromLogContext()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithMachineName();
-});
+// Configure Serilog from appsettings.json only
+builder.Host.UseSerilog((context, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration));
 
-// Add services to the container.
+// Add services to the container
 builder.Services.AddSingleton<SaveChangesInterceptor, CreatedInterceptor>();
 builder.Services.AddSingleton<SaveChangesInterceptor, SoftDeleteInterceptor>();
 
@@ -35,36 +32,42 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthentication("ApiKeyScheme")
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>("ApiKeyScheme", null);
 
-// Add authorization with the API key policy
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ApiKeyPolicy", policy => {
         policy.AddAuthenticationSchemes("ApiKeyScheme");
         policy.RequireAuthenticatedUser();
     });
 
-
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-app.UseSerilogRequestLogging(options => {
-    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) => {
-        // Still enrich DiagnosticContext for structured log sinks
-        diagnosticContext.Set("RequestIp", httpContext.Connection.RemoteIpAddress?.ToString() ?? string.Empty);
+// Custom middleware for request-scoped logging
+app.Use(async (context, next) => {
+    var requestId = Guid.NewGuid().ToString();
+    var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+    var clientId = context.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value ?? "Unknown";
 
-        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
-        diagnosticContext.Set("ClientIp", clientIp);
+    using (LogContext.PushProperty("RequestId", requestId))
+    using (LogContext.PushProperty("ClientIp", clientIp))
+    using (LogContext.PushProperty("ClientId", clientId)) {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        var stopwatch = Stopwatch.StartNew();
 
-        var clientId = httpContext.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value ?? "Unknown";
-        diagnosticContext.Set("ClientId", clientId);
-    };
+        logger.LogInformation("Starting request {RequestMethod} {RequestPath}",
+            context.Request.Method, context.Request.Path);
 
-    options.MessageTemplate =
-        "HTTP {RequestMethod} responded {StatusCode} in {Elapsed:0.0000} ms";
+        try {
+            await next();
+        }
+        finally {
+            stopwatch.Stop();
+            logger.LogInformation("Completed request {RequestMethod} {RequestPath} with status {StatusCode} in {Elapsed:0.0000} ms",
+                context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.Elapsed.TotalMilliseconds);
+        }
+    }
 });
-
 
 using (var scope = app.Services.CreateScope()) {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -72,13 +75,11 @@ using (var scope = app.Services.CreateScope()) {
     await dbContext.Database.MigrateAsync();
 }
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment()) {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
-
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -87,18 +88,15 @@ app.MapPost("/blacklist", async (
     AppDbContext db,
     HttpRequest request,
     ILogger<Program> logger) => {
-    var requesterIp = request.HttpContext.Connection.RemoteIpAddress?.ToString();
-
-    logger.LogInformation("Request to block: {TargetIp}", dto.BlackIp);
+    logger.LogInformation("Request to block IP: {TargetIp}", dto.BlackIp);
 
     var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.BlackIp == dto.BlackIp);
     if (entry is not null) return Results.Ok();
 
-    var clientId = request.HttpContext.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value;
     var newEntry = new BlacklistEntry {
         BlackIp = dto.BlackIp,
-        RequesterIp = requesterIp,
-        RegisteredByClient = clientId
+        RequesterIp = request.HttpContext.Connection.RemoteIpAddress?.ToString(),
+        RegisteredByClient = request.HttpContext.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value
     };
     db.BlacklistEntries.Add(newEntry);
 
@@ -106,18 +104,20 @@ app.MapPost("/blacklist", async (
     return Results.Created($"/blacklist/{newEntry.Id}", BlacklistEntryResponse.MapFrom(newEntry));
 }).RequireAuthorization("ApiKeyPolicy");
 
-
-app.MapGet("/blacklist/{id:int}", async (int id, AppDbContext db) => {
+app.MapGet("/blacklist/{id:int}", async (int id, AppDbContext db, ILogger<Program> logger) => {
+    logger.LogInformation("Retrieving blacklist entry by ID: {Id}", id);
     var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.Id == id);
     return entry is null ? Results.NotFound() : Results.Ok(BlacklistEntryResponse.MapFrom(entry));
 }).RequireAuthorization("ApiKeyPolicy");
 
-app.MapGet("/blacklist/{ip}", async (string ip, AppDbContext db) => {
+app.MapGet("/blacklist/{ip}", async (string ip, AppDbContext db, ILogger<Program> logger) => {
+    logger.LogInformation("Retrieving blacklist entry by IP: {Ip}", ip);
     var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.BlackIp == ip);
     return entry is null ? Results.NotFound() : Results.Ok(BlacklistEntryResponse.MapFrom(entry));
 }).RequireAuthorization("ApiKeyPolicy");
 
-app.MapGet("/blacklist", async (AppDbContext db) => {
+app.MapGet("/blacklist", async (AppDbContext db, ILogger<Program> logger) => {
+    logger.LogInformation("Retrieving all blacklist entries");
     var entries = await db.BlacklistEntries.ToListAsync();
     var response = entries.Select(BlacklistEntryResponse.MapFrom);
     return Results.Ok(response);
