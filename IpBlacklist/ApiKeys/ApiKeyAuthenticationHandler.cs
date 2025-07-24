@@ -31,7 +31,6 @@ public class ApiKeyAuthenticationHandler(
         var claims = new[] {
             new Claim(ClaimTypes.Name, "ApiKeyUser"),
             new Claim(ApiKeyClaims.ApiKeyClientId, apiKey.ClientId)
-            
         };
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);

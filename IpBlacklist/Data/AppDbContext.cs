@@ -1,7 +1,9 @@
 using System.Linq.Expressions;
+using System.Text.Json;
 using IpBlacklist.Data.BaseModels;
 using IpBlacklist.Data.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace IpBlacklist.Data;
 
@@ -15,9 +17,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<BlacklistEntry>(entity => {
             entity.ToTable("BlacklistEntry");
 
-            entity.HasIndex(item => item.RequesterIp)
+            entity.HasIndex(item => item.BlackIp)
                 .IsUnique()
                 .HasFilter("[Deleted] = 0");
+
+            var converter = new ValueConverter<List<string>, string>(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null!),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!) ?? new List<string>());
+
+            entity
+                .Property("_registeredByClients")
+                .HasColumnName("RegisteredByClients")
+                .HasConversion(converter)
+                .HasColumnType("nvarchar(max)");
         });
     }
 

@@ -71,6 +71,7 @@ app.Use(async (context, next) => {
 
 using (var scope = app.Services.CreateScope()) {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    // await dbContext.Database.EnsureDeletedAsync();
     await dbContext.Database.EnsureCreatedAsync();
     await dbContext.Database.MigrateAsync();
 }
@@ -88,37 +89,51 @@ app.MapPost("/blacklist", async (
     AppDbContext db,
     HttpRequest request,
     ILogger<Program> logger) => {
-    logger.LogInformation("Request to block IP: {TargetIp}", dto.BlackIp);
+    var clientId = request.HttpContext.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value;
+    logger.LogInformation("{ClientId} request to block IP: {TargetIp}", clientId, dto.BlackIp);
+    if (clientId is null) return Results.Unauthorized();
 
-    var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.BlackIp == dto.BlackIp);
-    if (entry is not null) return Results.Ok();
+    var entry = await db.BlacklistEntries.AsTracking().FirstOrDefaultAsync(e => e.BlackIp == dto.BlackIp);
+    if (entry is not null) {
+        if (!entry.RegisteredByClients.Contains(clientId)) {
+            entry.AddClient(clientId);
+            db.Entry(entry).State = EntityState.Modified;
+            await db.SaveChangesAsync();
+        }
+
+        return Results.Ok();
+    }
 
     var newEntry = new BlacklistEntry {
         BlackIp = dto.BlackIp,
-        RequesterIp = request.HttpContext.Connection.RemoteIpAddress?.ToString(),
-        RegisteredByClient = request.HttpContext.User.FindFirst(ApiKeyClaims.ApiKeyClientId)?.Value
+        RequesterIp = request.HttpContext.Connection.RemoteIpAddress?.ToString()
     };
+    newEntry.AddClient(clientId);
     db.BlacklistEntries.Add(newEntry);
-
     await db.SaveChangesAsync();
+
     return Results.Created($"/blacklist/{newEntry.Id}", BlacklistEntryResponse.MapFrom(newEntry));
 }).RequireAuthorization("ApiKeyPolicy");
 
 app.MapGet("/blacklist/{id:int}", async (int id, AppDbContext db, ILogger<Program> logger) => {
     logger.LogInformation("Retrieving blacklist entry by ID: {Id}", id);
-    var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.Id == id);
+    var entry = await db.BlacklistEntries.AsNoTracking()
+        .FirstOrDefaultAsync(e => e.Id == id);
     return entry is null ? Results.NotFound() : Results.Ok(BlacklistEntryResponse.MapFrom(entry));
 }).RequireAuthorization("ApiKeyPolicy");
 
 app.MapGet("/blacklist/{ip}", async (string ip, AppDbContext db, ILogger<Program> logger) => {
     logger.LogInformation("Retrieving blacklist entry by IP: {Ip}", ip);
-    var entry = await db.BlacklistEntries.FirstOrDefaultAsync(e => e.BlackIp == ip);
+    var entry = await db.BlacklistEntries.AsNoTracking()
+        .FirstOrDefaultAsync(e => e.BlackIp == ip);
     return entry is null ? Results.NotFound() : Results.Ok(BlacklistEntryResponse.MapFrom(entry));
 }).RequireAuthorization("ApiKeyPolicy");
 
 app.MapGet("/blacklist", async (AppDbContext db, ILogger<Program> logger) => {
     logger.LogInformation("Retrieving all blacklist entries");
-    var entries = await db.BlacklistEntries.ToListAsync();
+    var entries = await db.BlacklistEntries.AsNoTracking()
+        .OrderByDescending(item => item.Frequency)
+        .ToListAsync();
     var response = entries.Select(BlacklistEntryResponse.MapFrom);
     return Results.Ok(response);
 }).RequireAuthorization("ApiKeyPolicy");
