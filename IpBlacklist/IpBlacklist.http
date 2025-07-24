@@ -1,0 +1,38 @@
+@baseUrl = http://localhost:5157
+@apiKey = client1:secret123
+
+### 🔍 Get All Entries
+GET {{baseUrl}}/blacklist
+X-Api-Key: {{apiKey}}
+Accept: application/json
+
+###
+
+### 🔍 Get Entry by Id
+GET {{baseUrl}}/blacklist/2
+X-Api-Key: {{apiKey}}
+Accept: application/json
+
+### 🔍 Get Entry by Ip
+GET {{baseUrl}}/blacklist/192.168.1.99
+X-Api-Key: {{apiKey}}
+Accept: application/json
+
+###
+
+### ➕ Create Entry
+POST {{baseUrl}}/blacklist
+X-Api-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "blackIp": "192.168.1.99"
+}
+
+###
+
+### ❌ Soft Delete Entry (will be intercepted)
+DELETE {{baseUrl}}/blacklist/1
+X-Api-Key: {{apiKey}}
+
+###

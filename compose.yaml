@@ -1,0 +1,19 @@
+﻿services:
+  ip-blacklist:
+    image: ip-blacklist
+    build:
+      context: .
+      dockerfile: IpBlacklist/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ApiKeys__Keys__0__ClientId=client1
+      - ApiKeys__Keys__0__SecretKey=secret123
+      - ApiKeys__Keys__1__ClientId=client2
+      - ApiKeys__Keys__1__SecretKey=secret345
+      - ConnectionStrings__Default=Server=localhost,1433;Database=IpBlacklist;User Id=sa;Password=YourStrong123@Password;TrustServerCertificate=True;
+    network_mode: host
+
+volumes:
+  appdata:
