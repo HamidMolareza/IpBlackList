@@ -9,10 +9,10 @@ public class BlacklistEntry : BaseEntity {
     [MaxLength(20)] public string? RequesterIp { get; set; }
 
     // Private backing field
-    private readonly List<string> _registeredByClients = [];
+    private readonly List<Client> _registeredByClients = [];
 
     // Public read-only access
-    public IReadOnlyList<string> RegisteredByClients => _registeredByClients;
+    public IReadOnlyList<Client> RegisteredByClients => _registeredByClients;
 
     public int Frequency {
         get => _registeredByClients.Count;
@@ -22,14 +22,32 @@ public class BlacklistEntry : BaseEntity {
     // Method to add client
     public void AddClient(string clientId) {
         clientId = clientId.ToLower();
-        if (!_registeredByClients.Contains(clientId)) {
-            _registeredByClients.Add(clientId);
+        if (!ClientExist(clientId)) {
+            _registeredByClients.Add(new Client(clientId));
         }
     }
 
-    // Optional: method to remove client
-    public void RemoveClient(string clientId) {
+    public bool ClientExist(string clientId) {
         clientId = clientId.ToLower();
-        _registeredByClients.Remove(clientId);
+        return _registeredByClients.Exists(c => c.Name == clientId);
+    }
+
+    public class Client(string name) {
+        private string _name = name;
+        private DateTime _dateTimeUtc;
+
+        public string Name {
+            get => _name;
+            set {
+                if (string.IsNullOrWhiteSpace(value))
+                    throw new ArgumentNullException(value);
+                _name = value.ToLower();
+            }
+        }
+
+        public DateTime DateTimeUtc {
+            get => _dateTimeUtc == default ? DateTime.UtcNow : _dateTimeUtc;
+            set => _dateTimeUtc = value;
+        }
     }
 }

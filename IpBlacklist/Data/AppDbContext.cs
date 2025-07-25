@@ -21,15 +21,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .IsUnique()
                 .HasFilter("[Deleted] = 0");
 
-            var converter = new ValueConverter<List<string>, string>(
+            var converter = new ValueConverter<List<BlacklistEntry.Client>, string>(
                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null!),
-                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions)null!) ?? new List<string>());
+                v => JsonSerializer.Deserialize<List<BlacklistEntry.Client>>(v, (JsonSerializerOptions)null!) ?? new List<BlacklistEntry.Client>());
 
             entity
                 .Property("_registeredByClients")
                 .HasColumnName("RegisteredByClients")
                 .HasConversion(converter)
                 .HasColumnType("nvarchar(max)");
+            modelBuilder.Ignore<BlacklistEntry.Client>();
+
         });
     }
 

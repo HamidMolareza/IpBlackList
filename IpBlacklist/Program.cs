@@ -95,7 +95,7 @@ app.MapPost("/blacklist", async (
 
     var entry = await db.BlacklistEntries.AsTracking().FirstOrDefaultAsync(e => e.BlackIp == dto.BlackIp);
     if (entry is not null) {
-        if (!entry.RegisteredByClients.Contains(clientId)) {
+        if (!entry.ClientExist(clientId)) {
             entry.AddClient(clientId);
             db.Entry(entry).State = EntityState.Modified;
             await db.SaveChangesAsync();
