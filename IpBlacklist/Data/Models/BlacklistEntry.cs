@@ -4,9 +4,9 @@ using IpBlacklist.Data.BaseModels;
 namespace IpBlacklist.Data.Models;
 
 public class BlacklistEntry : BaseEntity {
-    [MaxLength(20)] [Required] public string BlackIp { get; set; } = null!;
+    [MaxLength(30)] [Required] public string BlackIp { get; set; } = null!;
 
-    [MaxLength(20)] public string? RequesterIp { get; set; }
+    [MaxLength(30)] public string? RequesterIp { get; set; }
 
     // Private backing field
     private readonly List<Client> _registeredByClients = [];
