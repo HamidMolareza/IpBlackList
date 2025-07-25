@@ -8,6 +8,8 @@ public class ApiKeyValidator(IOptions<ApiKeyOptions> options) : IApiKeyValidator
     public bool IsValid(string clientId, string secretKey) {
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(secretKey))
             return false;
+
+        clientId = clientId.ToLower();
         return _keys.Count != 0
                && _keys.Any(k => k.ClientId == clientId && k.SecretKey == secretKey);
     }

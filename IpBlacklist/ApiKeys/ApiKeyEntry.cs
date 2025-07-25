@@ -1,6 +1,12 @@
 namespace IpBlacklist.ApiKeys;
 
 public class ApiKeyEntry {
-    public string ClientId { get; set; } = string.Empty;
+    private string _clientId = string.Empty;
+
+    public string ClientId {
+        get => _clientId;
+        set => _clientId = value.ToLower();
+    }
+
     public string SecretKey { get; set; } = string.Empty;
 }
