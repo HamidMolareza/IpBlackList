@@ -13,7 +13,10 @@
       - ApiKeys__Keys__1__ClientId=client2
       - ApiKeys__Keys__1__SecretKey=secret345
       - ConnectionStrings__Default=Server=localhost,1433;Database=IpBlacklist;User Id=sa;Password=YourStrong123@Password;TrustServerCertificate=True;
-    network_mode: host
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
+      - ./logs:/app/logs
+#    network_mode: host
 
 volumes:
   appdata:
