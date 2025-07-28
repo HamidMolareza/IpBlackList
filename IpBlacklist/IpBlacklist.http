@@ -1,8 +1,14 @@
 @baseUrl = http://localhost:5157
-@apiKey = client1:secret123
+#@apiKey = client1:secret123
+@apiKey = client2:secret456
 
 ### 🔍 Get All Entries
 GET {{baseUrl}}/blacklist
+X-Api-Key: {{apiKey}}
+Accept: application/json
+
+### 🔍 Get All Entries
+GET {{baseUrl}}/blacklist?token=MjAyNS0wNy0yOFQxMzoxMTowNS40MTgyMDI0Wg==
 X-Api-Key: {{apiKey}}
 Accept: application/json
 

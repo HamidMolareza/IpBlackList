@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace IpBlacklist.Data.Interceptors;
 
-public class CreatedInterceptor : SaveChangesInterceptor {
+public class AuditFieldsInterceptor : SaveChangesInterceptor {
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result) {
-        SetCreated(eventData.Context);
+        SetAuditFields(eventData.Context);
         return base.SavingChanges(eventData, result);
     }
 
@@ -14,18 +14,25 @@ public class CreatedInterceptor : SaveChangesInterceptor {
         DbContextEventData eventData,
         InterceptionResult<int> result,
         CancellationToken cancellationToken = default) {
-        SetCreated(eventData.Context);
+        SetAuditFields(eventData.Context);
         return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
-    private void SetCreated(DbContext? context) {
+    private void SetAuditFields(DbContext? context) {
         if (context == null) return;
 
-        var entries = context.ChangeTracker.Entries<AuditableEntity>()
-            .Where(e => e.State == EntityState.Added);
+        var utcNow = DateTime.UtcNow;
 
-        foreach (var entry in entries) {
-            entry.Entity.CreatedUtc = DateTime.UtcNow;
+        foreach (var entry in context.ChangeTracker.Entries<AuditableEntity>()) {
+            switch (entry.State) {
+                case EntityState.Added:
+                    entry.Entity.CreatedUtc = utcNow;
+                    entry.Entity.UpdatedAtUtc = utcNow;
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAtUtc = utcNow;
+                    break;
+            }
         }
     }
 }

@@ -31,7 +31,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasConversion(converter)
                 .HasColumnType("nvarchar(max)");
             modelBuilder.Ignore<BlacklistEntry.Client>();
-
         });
     }
 

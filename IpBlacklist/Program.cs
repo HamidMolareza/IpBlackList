@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Serilog;
 using Serilog.Context;
 using System.Diagnostics;
+using IpBlacklist.Helpers;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +18,7 @@ builder.Host.UseSerilog((context, configuration) =>
     configuration.ReadFrom.Configuration(context.Configuration));
 
 // Add services to the container
-builder.Services.AddSingleton<SaveChangesInterceptor, CreatedInterceptor>();
+builder.Services.AddSingleton<SaveChangesInterceptor, AuditFieldsInterceptor>();
 builder.Services.AddSingleton<SaveChangesInterceptor, SoftDeleteInterceptor>();
 
 var connectionString = builder.Configuration.GetConnectionString("Default");
@@ -129,12 +131,30 @@ app.MapGet("/blacklist/{ip}", async (string ip, AppDbContext db, ILogger<Program
     return entry is null ? Results.NotFound() : Results.Ok(BlacklistEntryResponse.MapFrom(entry));
 }).RequireAuthorization("ApiKeyPolicy");
 
-app.MapGet("/blacklist", async (AppDbContext db, ILogger<Program> logger) => {
-    logger.LogInformation("Retrieving all blacklist entries");
-    var entries = await db.BlacklistEntries.AsNoTracking()
+app.MapGet("/blacklist", async ([FromQuery] string? token, AppDbContext db, ILogger<Program> logger) => {
+    logger.LogInformation("Retrieving all blacklist entries. Token: {Token}", token);
+
+    var since = SyncTokenHelper.DecodeToken(token);
+
+    var query = db.BlacklistEntries.AsNoTracking();
+    if (since.HasValue)
+        query = query.Where(e => e.UpdatedAtUtc > since.Value);
+
+    var entries = await query
         .OrderByDescending(item => item.Frequency)
         .ToListAsync();
-    var response = entries.Select(BlacklistEntryResponse.MapFrom);
+
+    // Determine the new token (latest UpdatedAtUtc)
+    var newToken = entries.Count > 0
+        ? SyncTokenHelper.EncodeToken(entries.Max(x => x.UpdatedAtUtc))
+        : token; // If no updates, return the same token
+
+    var items = entries.Select(BlacklistEntryResponse.MapFrom).ToList();
+
+    var response = new {
+        data = items,
+        nextToken = newToken
+    };
     return Results.Ok(response);
 }).RequireAuthorization("ApiKeyPolicy");
 
